@@ -612,6 +612,8 @@ function AppInner() {
       } else {
         Alert.alert('Download error', `Status: ${result && result.status}`);
       }
+      // reset progress after finished
+      setDownloadProgress(0);
     } catch (err) {
       console.error('Download failed', err && (err.stack || err));
       Alert.alert('Download failed', String(err && (err.message || err)));
@@ -628,8 +630,12 @@ function AppInner() {
         <Text numberOfLines={1} style={[cardStyles.channel, { color: theme.muted }]}>{item.channel} • {item.duration || ''} • {item.views ? `${item.views.toLocaleString()} views` : ''}</Text>
       </View>
       <View style={{ flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between' }}>
-        <TouchableOpacity onPress={() => downloadTrack(item)} style={{ padding: 8, marginBottom: 8, backgroundColor: theme.primary, borderRadius: 8 }}>
-          <Ionicons name="cloud-download-outline" size={18} color="#001" />
+        <TouchableOpacity onPress={() => downloadTrack(item)} style={{ padding: 8, marginBottom: 8, backgroundColor: theme.primary, borderRadius: 8, minWidth: 56, alignItems: 'center', justifyContent: 'center' }}>
+          {isDownloading && currentTrack && currentTrack.id === item.id ? (
+            <Text style={{ color: '#001', fontWeight: '700' }}>{Math.round((downloadProgress || 0) * 100)}%</Text>
+          ) : (
+            <Ionicons name="cloud-download-outline" size={18} color="#001" />
+          )}
         </TouchableOpacity>
         <TouchableOpacity onPress={() => { setSelectedForPlaylist(item); setShowPlaylistModal(true); }} style={{ padding: 8, backgroundColor: theme.card, borderRadius: 8, borderWidth: 1, borderColor: theme.border }}>
           <Ionicons name="list-outline" size={18} color={theme.text} />

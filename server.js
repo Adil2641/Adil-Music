@@ -259,8 +259,39 @@ app.get('/download-apk', async (req, res) => {
   try {
     const apkUrl = process.env.APK_DOWNLOAD_URL;
     if (apkUrl && /^https?:\/\//i.test(apkUrl)) {
-      // redirect clients to the hosted APK (keeps server and APK separate)
-      return res.redirect(apkUrl);
+      // If configured, either redirect to the hosted APK (fast)
+      // or proxy the file and force a download filename that includes app name + version.
+      const preserve = (process.env.APK_PRESERVE_FILENAME || '1') !== '0';
+      const pkg = require('./package.json');
+      const appName = (process.env.APP_NAME || pkg.name || 'AdilMusic').replace(/\s+/g, '');
+      const appVersion = (process.env.APP_VERSION || pkg.version || `${Date.now()}`);
+      const filename = `${appName}-${appVersion}.apk`;
+
+      if (!preserve) {
+        return res.redirect(apkUrl);
+      }
+
+      // Proxy the remote APK so we can set Content-Disposition (suggested filename)
+      try {
+        // Try a HEAD first to get content-length/type
+        let head = null;
+        try { head = await require('axios').head(apkUrl, { timeout: 5000 }); } catch (e) { head = null; }
+        const contentLength = head && head.headers && head.headers['content-length'];
+        const contentType = (head && head.headers && head.headers['content-type']) || 'application/vnd.android.package-archive';
+        if (contentLength) res.setHeader('Content-Length', contentLength);
+        res.setHeader('Content-Type', contentType);
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+
+        const streamResp = await require('axios').get(apkUrl, { responseType: 'stream' });
+        streamResp.data.on('error', (err) => {
+          console.error('Error proxying APK:', err && (err.stack || err));
+          try { res.end(); } catch (e) { /* ignore */ }
+        });
+        return streamResp.data.pipe(res);
+      } catch (e) {
+        console.error('APK proxy failed, falling back to redirect', e && (e.stack || e));
+        return res.redirect(apkUrl);
+      }
     }
 
     const localApk = path.join(__dirname, 'apks', 'app-release.apk');
@@ -278,11 +309,14 @@ app.get('/download-apk', async (req, res) => {
 app.get('/update-info', async (req, res) => {
   try {
     // prefer an explicit APK URL if set, otherwise serve the server's /download-apk route
+    const pkg = require('./package.json');
     const apkUrl = process.env.APK_DOWNLOAD_URL || `${req.protocol}://${req.get('host')}/download-apk`;
     // allow overriding version and notes via env vars
-    const version = process.env.APP_VERSION || (require('./package.json').version || '0.0.0');
+    const version = process.env.APP_VERSION || (pkg.version || '0.0.0');
     const notes = process.env.APP_RELEASE_NOTES || '';
-    return res.json({ version, notes, url: apkUrl });
+    const appName = process.env.APP_NAME || pkg.name || 'AdilMusic';
+    const filename = `${appName.replace(/\s+/g, '')}-${version}.apk`;
+    return res.json({ version, notes, url: apkUrl, filename });
   } catch (e) {
     console.error('update-info error', e);
     return res.status(500).json({ error: 'internal' });
