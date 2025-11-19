@@ -1,0 +1,18 @@
+# Render service manifest (template)
+# Update `repo` or use Render dashboard to point to this repo.
+services:
+  - type: web
+    name: adil-music-server
+    env: node
+    plan: free
+    region: oregon
+    buildCommand: "npm ci"
+    startCommand: "node server.js"
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: '10000'
+      - key: APK_DOWNLOAD_URL
+        # Set this to the public CDN/URL where you host the APK (or leave empty to host local ./apks/app-release.apk)
+        value: ""

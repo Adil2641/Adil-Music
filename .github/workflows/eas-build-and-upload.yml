@@ -1,0 +1,55 @@
+name: Build Android APK (EAS) and Upload Release
+
+# Manual dispatch workflow: run from Actions -> Run workflow
+on:
+  workflow_dispatch:
+
+jobs:
+  build-and-upload:
+    name: Build APK and create GitHub Release
+    runs-on: ubuntu-latest
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}   # set this in repo secrets
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # set this in repo secrets (default GITHUB_TOKEN also available)
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: |
+          npm ci
+
+      - name: Install EAS CLI
+        run: |
+          npm install -g eas-cli
+
+      - name: Login to Expo (EAS) using token
+        run: |
+          echo "$EXPO_TOKEN" | eas login --token
+        # Note: in CI the EXPO_TOKEN environment variable must be set. See README for obtaining a token.
+
+      - name: Start EAS build
+        run: |
+          # Non-interactive EAS build; adjust profile as needed
+          npx eas build -p android --profile production --non-interactive
+
+      - name: Wait for build to finish and download artifact (manual step explanation)
+        run: |
+          echo "The EAS build runs on Expo servers. After it completes, you can download the artifact via EAS or from the Expo dashboard."
+          echo "For automated download you can add additional steps here that query the EAS API or use 'eas build:list' and 'eas build:download' with the build ID."
+
+      - name: Create GitHub Release (placeholder)
+        run: |
+          echo "This step should create a GitHub release and upload the built APK as an asset."
+          echo "You will need to use the EAS build ID + eas-cli to fetch the artifact and then use GitHub's upload-release-asset API or an action such as 'softprops/action-gh-release' or 'actions/upload-release-asset'."
+
+# IMPORTANT:
+# - This workflow is a template. Building with EAS in CI requires EXPO_TOKEN in secrets and optionally additional credentials (keystore, etc.)
+# - For real automation, extend this workflow to query the EAS build API to get the artifact URL and then upload that file to a GitHub Release or S3.
+# - See README.md for a step-by-step manual flow that is simpler for first runs.

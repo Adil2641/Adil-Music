@@ -1,0 +1,15 @@
+{
+  "expo": {
+    "name": "Adil Music",
+    "slug": "adil-music",
+    "version": "1.0.0",
+    "sdkVersion": "48.0.0",
+    "platforms": ["android", "ios"],
+    "android": {
+      "package": "com.adilmusic.app"
+    },
+    "ios": {
+      "bundleIdentifier": "com.adilmusic.app"
+    }
+  }
+}
