@@ -17,7 +17,7 @@ function formatTime(ms) {
   return `${min.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
 }
 
-export default function Player({ videoId, title, thumbnail, channel, onClose, visible, onNext, onPrev, onMinimize, keepMounted = false }) {
+export default function Player({ videoId, title, thumbnail, channel, onClose, visible, onNext, onPrev, onMinimize, keepMounted = false, useCache = true }) {
   const { theme } = useTheme();
   const [stage, setStage] = useState('idle'); // idle | resolving | downloading | preparing | ready | error
   const [progress, setProgress] = useState(0);
@@ -126,9 +126,12 @@ export default function Player({ videoId, title, thumbnail, channel, onClose, vi
     async function prepare() {
       if (!visible || !videoId) return;
       setErrorMsg(''); setProgress(0); setStage('resolving'); setLocalUri(null);
+      // Choose storage directory: cache (temporary) or documentDirectory (persistent)
+      const storageDir = useCache ? FileSystem.cacheDirectory : (FileSystem.documentDirectory + 'adil_music/');
       // If we already have a prepared local file and an active sound for this video, reuse it
       try {
-        const expected = FileSystem.cacheDirectory + `adil_${videoId}.mp3`;
+        const filename = `adil_${videoId}.mp3`;
+        const expected = storageDir + filename;
         const f = await FileSystem.getInfoAsync(expected);
         if (f.exists && localUri && localUri === expected && soundRef.current) {
           // Reuse existing sound - don't stop/unload so timing/position stays intact
@@ -183,9 +186,14 @@ export default function Player({ videoId, title, thumbnail, channel, onClose, vi
 
         setStage('downloading');
         const filename = `adil_${videoId}.mp3`;
-        const dest = FileSystem.cacheDirectory + filename;
+        const storageDir = useCache ? FileSystem.cacheDirectory : (FileSystem.documentDirectory + 'adil_music/');
+        // ensure storage directory exists for persistent storage; cache directory usually exists
+        if (!useCache) {
+          try { await FileSystem.makeDirectoryAsync(storageDir, { intermediates: true }); } catch (e) { /* ignore if exists */ }
+        }
+        const dest = storageDir + filename;
 
-        try { const prev = await FileSystem.getInfoAsync(dest); if (prev.exists) await FileSystem.deleteAsync(dest); } catch (e) { }
+        try { const prev = await FileSystem.getInfoAsync(dest); if (prev.exists) {/* reuse by deleting to re-download if desired */} } catch (e) { }
 
         const download = FileSystem.createDownloadResumable(remoteUrl, dest, {}, (p) => {
           if (!mounted) return;

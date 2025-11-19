@@ -101,8 +101,8 @@ function AppInner() {
   const [refreshingDownloads, setRefreshingDownloads] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [stopOnClose, setStopOnClose] = useState(false);
-  // Default update URL points at the deployed Render server update-info endpoint.
-  const DEFAULT_UPDATE_URL = 'https://adil-music-47rr.onrender.com/update-info';
+  // Default update URL points at the deployed Railway server update-info endpoint.
+  const DEFAULT_UPDATE_URL = 'https://adil-music-server-production.up.railway.app/update-info';
   const [updateUrl, setUpdateUrl] = useState(DEFAULT_UPDATE_URL);
   const [updateInfo, setUpdateInfo] = useState(null);
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);

@@ -13,6 +13,8 @@ app.use(cors());
 app.use(express.json()); // <-- Add this to parse JSON bodies
 const path = require('path');
 const fs = require('fs');
+// Default public APK host (used when APK_DOWNLOAD_URL not set)
+const DEFAULT_APK_HOST = process.env.DEFAULT_APK_HOST || 'https://adil-music-server-production.up.railway.app';
 // simple request logger
 app.use((req, res, next) => {
   console.log(`[scraper] ${req.method} ${req.url} - params: ${JSON.stringify(req.query || {})}`);
@@ -310,13 +312,17 @@ app.get('/update-info', async (req, res) => {
   try {
     // prefer an explicit APK URL if set, otherwise serve the server's /download-apk route
     const pkg = require('./package.json');
-    const apkUrl = process.env.APK_DOWNLOAD_URL || `${req.protocol}://${req.get('host')}/download-apk`;
+    const apkUrl = process.env.APK_DOWNLOAD_URL || `${DEFAULT_APK_HOST}/download-apk`;
     // allow overriding version and notes via env vars
     const version = process.env.APP_VERSION || (pkg.version || '0.0.0');
     const notes = process.env.APP_RELEASE_NOTES || '';
     const appName = process.env.APP_NAME || pkg.name || 'AdilMusic';
     const filename = `${appName.replace(/\s+/g, '')}-${version}.apk`;
-    return res.json({ version, notes, url: apkUrl, filename });
+    // determine whether an APK is available (either via configured URL or local file)
+    const localApk = path.join(__dirname, 'apks', 'app-release.apk');
+    const apkAvailable = !!(process.env.APK_DOWNLOAD_URL || fs.existsSync(localApk));
+    const updateStatus = apkAvailable ? 'available' : 'none';
+    return res.json({ version, notes, url: apkUrl, filename, updateStatus });
   } catch (e) {
     console.error('update-info error', e);
     return res.status(500).json({ error: 'internal' });

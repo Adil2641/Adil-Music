@@ -17,7 +17,8 @@ if (typeof module !== 'undefined' && module.exports) {
 // Set this to your scraper server URL when running the local Node server.
 // For devices on the same Wi-Fi use your machine IP, e.g. 'http://192.168.0.106:4000'
 // For Android emulator use 'http://10.0.2.2:4000'
-export const SCRAPER_SERVER = 'http://192.168.0.106:4000';
+// Default to the deployed Railway scraper server for production
+export const SCRAPER_SERVER = 'https://adil-music-server-production.up.railway.app';
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports.SCRAPER_SERVER = 'http://192.168.0.106:4000';
+  module.exports.SCRAPER_SERVER = 'https://adil-music-server-production.up.railway.app';
 }

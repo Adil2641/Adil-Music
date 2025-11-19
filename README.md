@@ -27,6 +27,6 @@ Starting the server locally
 	 ```
 
 Using the Render-deployed server in the app
- - The app is preconfigured to use `https://adil-music-47rr.onrender.com/update-info` as the default update URL.
+ - The app is preconfigured to use `https://adil-music-server-production.up.railway.app/update-info` as the default update URL.
  - In the app Settings → Update you can change the update URL if you host the update JSON elsewhere.
 
