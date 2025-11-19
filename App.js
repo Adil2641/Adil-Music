@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Platform, Alert, TextInput, KeyboardAvoidingView, Modal, RefreshControl } from 'react-native';
+import { Platform, Alert, TextInput, KeyboardAvoidingView, Modal, RefreshControl, Linking } from 'react-native';
 import { SafeAreaView, View, Text, FlatList, Image, TouchableOpacity, StyleSheet } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import SearchBar from './components/SearchBar';
@@ -11,6 +11,7 @@ import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import * as Sharing from 'expo-sharing';
 import Telemetry from './utils/telemetry';
 import TrackPlayerWrapper from './utils/trackPlayerWrapper';
+import * as Updates from 'expo-updates';
 
 function AppInner() {
   const { theme, toggle, setTheme } = useTheme();
@@ -90,6 +91,7 @@ function AppInner() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [prefetchedAudioUrl, setPrefetchedAudioUrl] = useState(null);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState(0);
   const [playlists, setPlaylists] = useState([]);
   const [showPlaylistModal, setShowPlaylistModal] = useState(false);
   const [selectedForPlaylist, setSelectedForPlaylist] = useState(null);
@@ -99,7 +101,9 @@ function AppInner() {
   const [refreshingDownloads, setRefreshingDownloads] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [stopOnClose, setStopOnClose] = useState(false);
-  const [updateUrl, setUpdateUrl] = useState('');
+  // Default update URL points at the deployed Render server update-info endpoint.
+  const DEFAULT_UPDATE_URL = 'https://adil-music-47rr.onrender.com/update-info';
+  const [updateUrl, setUpdateUrl] = useState(DEFAULT_UPDATE_URL);
   const [updateInfo, setUpdateInfo] = useState(null);
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
   const localVersion = (() => {
@@ -487,20 +491,65 @@ function AppInner() {
     return 0;
   };
 
+  const promptConfirm = (title, message, okText = 'OK', cancelText = 'Cancel') => new Promise((resolve) => {
+    Alert.alert(title, message, [
+      { text: cancelText, onPress: () => resolve(false), style: 'cancel' },
+      { text: okText, onPress: () => resolve(true) },
+    ], { cancelable: true });
+  });
+
   const checkForUpdates = async () => {
     if (!updateUrl || updateUrl.trim() === '') return Alert.alert('No update URL', 'Set an update URL first');
     setIsCheckingUpdate(true);
+    let serverData = null;
     try {
-      const res = await fetch(updateUrl, { method: 'GET', headers: { 'Accept': 'application/json' }, cache: 'no-store' });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      // expected shape: { version: '1.2.3', notes: '...', url: 'https://...' }
-      setUpdateInfo(data || null);
-      if (data && data.version && compareSemver(data.version, localVersion) > 0) {
-        Alert.alert('Update available', `Version ${data.version} is available.`, [{ text: 'Open', onPress: () => { if (data.url) Linking.openURL(data.url).catch(()=>{}); } }, { text: 'OK' }]);
-      } else {
-        Alert.alert('Up to date', `You are on version ${localVersion}`);
+      // 1) Try to fetch server-provided update metadata (APK / metadata)
+      try {
+        const res = await fetch(updateUrl, { method: 'GET', headers: { 'Accept': 'application/json' }, cache: 'no-store' });
+        if (res.ok) {
+          serverData = await res.json();
+          setUpdateInfo(serverData || null);
+        } else {
+          console.warn('Update metadata fetch returned', res.status);
+        }
+      } catch (e) {
+        console.warn('Failed to fetch update metadata', e);
       }
+
+      // 2) Check for OTA JS update via expo-updates
+      try {
+        const ota = await Updates.checkForUpdateAsync();
+        if (ota && ota.isAvailable) {
+          const ok = await promptConfirm('Quick update available', 'A fast JavaScript update is available. Install now?', 'Install', 'Later');
+          if (ok) {
+            try {
+              await Updates.fetchUpdateAsync();
+              // apply immediately
+              await Updates.reloadAsync();
+              return; // app will reload; exit handler
+            } catch (e) {
+              console.warn('OTA install failed', e);
+              Alert.alert('Update failed', 'Failed to apply update.');
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('OTA check/install failed', e);
+      }
+
+      // 3) If server metadata indicates a newer native version, prompt to download/install
+      if (serverData && serverData.version && compareSemver(serverData.version, localVersion) > 0) {
+        const msg = serverData.notes ? `${serverData.notes}\n\nDownload and install version ${serverData.version}?` : `Download and install version ${serverData.version}?`;
+        const open = await promptConfirm('New app version available', msg, 'Open', 'Later');
+        if (open && serverData.url) {
+          Linking.openURL(serverData.url).catch(() => Alert.alert('Open failed', 'Could not open the download URL'));
+        }
+        setIsCheckingUpdate(false);
+        return;
+      }
+
+      // 4) Nothing to do
+      Alert.alert('Up to date', `You are on version ${localVersion}`);
     } catch (e) {
       console.warn('Update check failed', e);
       Alert.alert('Check failed', String(e && (e.message || e)));
@@ -535,6 +584,11 @@ function AppInner() {
         return;
       }
 
+      // Start playback immediately from the remote URL while downloading in background
+      setPrefetchedAudioUrl(url);
+      setCurrentTrack(item);
+      setIsPlaying(true);
+
       const name = sanitizeFilename((item.title || 'track') + '.mp3');
       const destDir = downloadDir.endsWith('/') ? downloadDir : downloadDir + '/';
       const dest = destDir + name;
@@ -542,13 +596,21 @@ function AppInner() {
       // ensure directory
       try { if (!(await FileSystem.getInfoAsync(destDir)).exists) await FileSystem.makeDirectoryAsync(destDir, { intermediates: true }); } catch (e) { /* ignore */ }
 
-      const downloadResumable = FileSystem.createDownloadResumable(url, dest);
+      // create a resumable download and report progress; playback uses the remote URL so user doesn't wait
+      const progressCallback = (progress) => {
+        try {
+          const p = progress.totalBytesExpectedToWrite > 0 ? (progress.totalBytesWritten / progress.totalBytesExpectedToWrite) : 0;
+          setDownloadProgress(p);
+        } catch (e) { /* ignore */ }
+      };
+
+      const downloadResumable = FileSystem.createDownloadResumable(url, dest, {}, progressCallback);
       const result = await downloadResumable.downloadAsync();
       if (result && result.status === 200) {
         Alert.alert('Downloaded', `Saved to ${dest}`);
         await refreshDownloads();
       } else {
-        Alert.alert('Download error', `Status: ${result.status}`);
+        Alert.alert('Download error', `Status: ${result && result.status}`);
       }
     } catch (err) {
       console.error('Download failed', err && (err.stack || err));
