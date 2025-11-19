@@ -274,4 +274,18 @@ app.get('/download-apk', async (req, res) => {
     return res.status(500).json({ error: 'internal' });
   }
 });
+// Simple update-info endpoint for apps to check latest version and download URL
+app.get('/update-info', async (req, res) => {
+  try {
+    // prefer an explicit APK URL if set, otherwise serve the server's /download-apk route
+    const apkUrl = process.env.APK_DOWNLOAD_URL || `${req.protocol}://${req.get('host')}/download-apk`;
+    // allow overriding version and notes via env vars
+    const version = process.env.APP_VERSION || (require('./package.json').version || '0.0.0');
+    const notes = process.env.APP_RELEASE_NOTES || '';
+    return res.json({ version, notes, url: apkUrl });
+  } catch (e) {
+    console.error('update-info error', e);
+    return res.status(500).json({ error: 'internal' });
+  }
+});
 app.listen(port, () => console.log(`YouTube scraper server running on http://localhost:${port} (APK endpoint: /download-apk)`));
